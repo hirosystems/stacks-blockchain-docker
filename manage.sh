@@ -450,31 +450,99 @@ update_configs(){
 		## update Config.toml with signer options
 		if [ "${SIGNER}" != "true" ]; then
 			${VERBOSE} && log "${COLYELLOW}Disabling signer options in ${CONFIG_TOML}${COLRESET}"
-			sed -i.tmp "
-				/^\[\[events_observer\]\]/{
-					:a
-					N
-					/endpoint.*stacks-signer/!ba
-					s/^/#/mg
-				}
-				/^stacker = true/ s/^/#/
-			" "${CONFIG_TOML}" || {
-					log_exit "Unable to update values in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
+			# Use a portable approach that works on both BSD and GNU sed
+			# First, comment out the stacker = true line
+			sed -i.tmp 's/^stacker = true/#stacker = true/' "${CONFIG_TOML}" || {
+				log_exit "Unable to update stacker value in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
 			}
+			# Then, comment out only the events_observer block that contains stacks-signer
+			# Using awk for better portability across platforms
+			awk '
+				/^\[\[events_observer\]\]/ { 
+					observer_block = $0 "\n"
+					in_observer = 1
+					next
+				}
+				in_observer && /^$/ {
+					if (observer_block ~ /stacks-signer/) {
+						gsub(/^/, "#", observer_block)
+					}
+					printf "%s\n", observer_block
+					in_observer = 0
+					observer_block = ""
+					next
+				}
+				in_observer && /^\[\[/ {
+					if (observer_block ~ /stacks-signer/) {
+						gsub(/^/, "#", observer_block)
+					}
+					printf "%s", observer_block
+					in_observer = 0
+					observer_block = ""
+				}
+				in_observer {
+					observer_block = observer_block $0 "\n"
+					next
+				}
+				{ print }
+				END {
+					if (in_observer && observer_block ~ /stacks-signer/) {
+						gsub(/^/, "#", observer_block)
+						printf "%s", observer_block
+					} else if (in_observer) {
+						printf "%s", observer_block
+					}
+				}
+			' "${CONFIG_TOML}" > "${CONFIG_TOML}.tmp2" && mv "${CONFIG_TOML}.tmp2" "${CONFIG_TOML}" || {
+				log_exit "Unable to update events_observer in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
+			}
+			# Clean up the sed temp file
+			rm -f "${CONFIG_TOML}.tmp"
     else
 			[ ! ${SIGNER_PRIVATE_KEY} ] && log_exit "Signer private key not set!"
 			${VERBOSE} && log "${COLYELLOW}Enabling signer options in ${CONFIG_TOML}${COLRESET}"
-			sed -i.tmp "
-				/^#\[\[events_observer\]\]/{
-					:a
-					N
-					/endpoint.*stacks-signer/!ba
-					s/^#//mg
-				}
-				/^#stacker = true/ s/^#//
-			" "${CONFIG_TOML}" || {
-					log_exit "Unable to update values in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
+			# Use portable sed commands without GNU-specific features
+			# First uncomment the stacker line
+			sed -i.tmp 's/^#stacker = true/stacker = true/' "${CONFIG_TOML}" || {
+				log_exit "Unable to update stacker value in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
 			}
+			# Then uncomment the signer events_observer block using awk for portability
+			awk '
+				BEGIN { in_observer = 0; buffer = "" }
+				/^#\[\[events_observer\]\]/ { 
+					buffer = $0 "\n"
+					in_observer = 1
+					next
+				}
+				in_observer && /^#/ {
+					buffer = buffer $0 "\n"
+					if ($0 ~ /stacks-signer/) {
+						found_signer = 1
+					}
+					next
+				}
+				in_observer && (/^$/ || /^\[/) {
+					if (found_signer) {
+						gsub(/^#/, "", buffer)
+					}
+					printf "%s", buffer
+					if (/^$/) printf "\n"
+					buffer = ""
+					in_observer = 0
+					found_signer = 0
+				}
+				!in_observer { print }
+				END {
+					if (in_observer && found_signer) {
+						gsub(/^#/, "", buffer)
+						printf "%s", buffer
+					}
+				}
+			' "${CONFIG_TOML}" > "${CONFIG_TOML}.tmp2" && mv "${CONFIG_TOML}.tmp2" "${CONFIG_TOML}" || {
+				log_exit "Unable to update events_observer in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
+			}
+			# Clean up the sed temp file
+			rm -f "${CONFIG_TOML}.tmp"
 
 				## update Signer.toml with env vars
 			[[ ! -f "${SIGNER_TOML}" ]] && cp "${SIGNER_TOML}.sample" "${SIGNER_TOML}"
