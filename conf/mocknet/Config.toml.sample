@@ -11,9 +11,9 @@ chain = "bitcoin"
 mode = "mocknet"
 commit_anchor_block_within = 5000
 
-[[events_observer]]
-events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-endpoint = "stacks-signer:30000"
+#[[events_observer]]
+#events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
+#endpoint = "stacks-signer:30000"
 
 [[events_observer]]
 endpoint = "stacks-blockchain-api:3700"
